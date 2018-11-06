@@ -1,23 +1,18 @@
-from flask import Flask, app, render_template
-from routes import Route
 import importlib
+from flask import Flask, app, render_template, url_for
+from routes import Route
 
 class Application(Flask):
 
     def __init__(
         self,
-        import_name,
-        static_url_path=None,
-        static_folder='static',
-        static_host=None,
-        host_matching=False,
-        subdomain_matching=False,
-        template_folder='templates',
-        instance_path=None,
-        instance_relative_config=False,
-        root_path=None
+        import_name
     ):
-        super(Application, self).__init__(import_name)
+        super(Application, self).__init__(
+            import_name,
+            '/public',
+            'public'
+        )
         self.build()
         self.register()
 
@@ -31,12 +26,13 @@ class Application(Flask):
             importlib.import_module('.' + controller, 'app.Controllers')
             funName = self.fun.__name__
             self.funName = controller[0:-10].lower() + self.fun.__name__.capitalize()
-            @self.route(routesDict[funName][0], methods=[routesDict[funName][1]])
-            def method(**kw):
-                return self.fun(**kw)
+            self.route(routesDict[funName][0], methods=[routesDict[funName][1]])(self.fun)
+            
     def register(self):
         self.registerViewMethod()
-
+        self.registerUrlFor()
+        self.registerStatic()
+        self.registerBootstrap()
 
     @app.setupmethod
     def add_url_rule(self, rule, endpoint=None, view_func=None,
@@ -138,9 +134,24 @@ class Application(Flask):
                                      'existing endpoint function: %s' % endpoint)
             self.view_functions[endpoint] = view_func
 
-
-
     def registerViewMethod(self):
         def view(template, **options):
-            return render_template(template + '.html', **options)
+            return render_template(
+                template + '.html',
+                app=self,
+                **options
+            )
         self.view = view
+    
+    def registerUrlFor(self):
+        self.url = url_for
+        
+    def registerStatic(self):
+        def static(path):
+            return self.static_url_path + path
+        self.static = static
+       
+    def registerBootstrap(self):
+        def bootstrap(file):
+            return self.static('/bootstrap/dist') + file
+        self.bootstrap = bootstrap
