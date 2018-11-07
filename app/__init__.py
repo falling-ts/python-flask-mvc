@@ -1,9 +1,8 @@
 import importlib
-from flask import Flask, app, render_template, url_for
+from flask import Flask, app, render_template, url_for, _request_ctx_stack
 from routes import Route
 
 class Application(Flask):
-
     def __init__(
         self,
         import_name
@@ -17,16 +16,21 @@ class Application(Flask):
         self.register()
 
     @classmethod
+    def initFuns(cls):
+        cls.funs = {}
+    
+    @classmethod
     def embellish(cls, fun):
-        cls.fun = fun
+        cls.funs[fun.__name__] = fun
 
     def build(self):
+        self.routes = Route.routes
         for controller, routesDict in Route.routes.items():
-            self.routes = Route.routes
+            self.initFuns()
             importlib.import_module('.' + controller, 'app.Controllers')
-            funName = self.fun.__name__
-            self.funName = controller[0:-10].lower() + self.fun.__name__.capitalize()
-            self.route(routesDict[funName][0], methods=[routesDict[funName][1]])(self.fun)
+            for funName, fun in self.funs.items():
+                self.funName = controller[0:-10].lower() + funName.capitalize()
+                self.route(routesDict[funName][0], methods=[routesDict[funName][1]])(fun)
             
     def register(self):
         self.registerViewMethod()
@@ -133,6 +137,29 @@ class Application(Flask):
                 raise AssertionError('View function mapping is overwriting an '
                                      'existing endpoint function: %s' % endpoint)
             self.view_functions[endpoint] = view_func
+            
+    def dispatch_request(self):
+        """Does the request dispatching.  Matches the URL and returns the
+        return value of the view or error handler.  This does not have to
+        be a response object.  In order to convert the return value to a
+        proper response object, call :func:`make_response`.
+
+        .. versionchanged:: 0.7
+           This no longer does the exception handling, this code was
+           moved to the new :meth:`full_dispatch_request`.
+        """
+        req = _request_ctx_stack.top.request
+        if req.routing_exception is not None:
+            self.raise_routing_exception(req)
+        rule = req.url_rule
+        # if we provide automatic options for this URL and the
+        # request came with the OPTIONS method, reply automatically
+        if getattr(rule, 'provide_automatic_options', False) \
+           and req.method == 'OPTIONS':
+            return self.make_default_options_response()
+        # otherwise dispatch to the handler for that endpoint
+        print(str(req.view_args))
+        return self.view_functions[rule.endpoint](self, **req.view_args)
 
     def registerViewMethod(self):
         def view(template, **options):
